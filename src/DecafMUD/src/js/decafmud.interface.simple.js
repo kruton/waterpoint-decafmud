@@ -99,6 +99,7 @@ var SimpleInterface = function(decaf) {
 	
 	// Make the input element.
 	this.input = document.createElement('input');
+        this.input.id = "inputelement";
 	this.input.title = "MUD Input".tr(this.decaf);
 	this.input.setAttribute('role','textbox');
 	this.input.setAttribute('aria-label', this.input.title);
@@ -113,12 +114,29 @@ var SimpleInterface = function(decaf) {
 	var helper = function(e) { si.handleBlur(e); };
 	addEvent(this.input, 'blur', helper);
 	addEvent(this.input, 'focus', helper);
-	
+
+        // remember a limited history; historyPosition is -1 unless
+        // the user is browsing through history (so the moment the
+        // input field changes, historyposition oes back to 0
+        this.history = [];
+        this.historyPosition = -1;
+        for (var i = 0; i < 100; i++) this.history[i] = '';
+
 	// Reset the interface state.
 	this.reset();
 	
 	// Listen to window resizing
-	addEvent(window,'resize',function() { si.resizeScreen(); });
+	addEvent(window, 'resize', this.resizeScreenFromEvent.bind(this, 'window resize'));
+
+	// Neuters IE's F1 help popup
+	if ("onhelp" in window)
+		window.onhelp = function() { return false; };
+
+	// Prevent leaving the page by accident (backspace)
+	window.onbeforeunload = this.unloadPageFromEvent.bind(this);
+
+        // Make sure the input is focussed
+        this.input.focus();
 	
 	return this;
 };
@@ -338,6 +356,16 @@ SimpleInterface.prototype.disconnected = function() {
 		'', 'connectivity disconnected');
 }
 
+/** Event handler for onBeforeUnload. */
+SimpleInterface.prototype.unloadPageFromEvent = function(e) {
+	if (this.decaf.connected) {
+		return "You are still connected.";
+	}
+	else {
+		return;
+	}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Initialization
 ///////////////////////////////////////////////////////////////////////////////
@@ -394,10 +422,12 @@ SimpleInterface.prototype.setup = function() {
 	// Create the display.
 	this.decaf.debugString('Initializing display plugin "'+display+'" in: #' + this.el_display.id,'info');
 	this.display = new DecafMUD.plugins.Display[display](this.decaf, this, this.el_display);
+        this.display.id = 'mud-display';
 	this.decaf.display = this.display;
 	
 	// Should we go fullscreen automatically?
-	this.goFullOnResize = this.store.get('fullscreen-auto', true);
+        // NB: disabled, gets confused by browser-based fullscreen (F11)
+	this.goFullOnResize = false; //this.store.get('fullscreen-auto', true);
 	
 	// Should we be starting in fullscreen?
 	var fs = this.store.get('fullscreen-start', this.decaf.options.set_interface.start_full);
@@ -676,7 +706,7 @@ SimpleInterface.prototype.tbDelete = function(id) {
 	if ( this.toolbuttons[id] === undefined ) { return; }
 	var btn = this.toolbuttons[id];
 	btn[0].parentNode.removeChild(btn[0]);
-	delete this.toolbuttons[id];
+	this.toolbuttons[id] = undefined;
 	
 	// Resize the toolbar.
 	this._resizeToolbar();
@@ -1215,7 +1245,6 @@ SimpleInterface.prototype.delIcon = function(ind) {
 	
 	// Remove the icon from DOM and delete.
 	this._input.removeChild(el);
-        delete this.icons[id][0];
 	
 	// Recalculate icon positions.
 	for(var i=0; i < this.icons.length; i++) {
@@ -1323,6 +1352,7 @@ SimpleInterface.prototype.enter_fs = function(showSize) {
 	
 	// Resize and show the size.
 	this._resizeToolbar();
+	this.resizeScreen(showSize, false);
 	if ( showSize !== false ) { this.showSize(); }
 	
 	// Refocus input?
@@ -1441,6 +1471,9 @@ SimpleInterface.prototype.resizeScreen = function(showSize,force) {
 		this.showSize(); }
 };
 
+SimpleInterface.prototype.resizeScreenFromEvent = function(source, event) {
+  this.resizeScreen(true, false);
+}
 ///////////////////////////////////////////////////////////////////////////////
 // The Input Element
 ///////////////////////////////////////////////////////////////////////////////
@@ -1449,7 +1482,7 @@ SimpleInterface.prototype.resizeScreen = function(showSize,force) {
  * @param {String} text The input to display. */
 SimpleInterface.prototype.displayInput = function(text) {
 	if ( (!this.display) || (!this.echo) ) { return; }
-	this.display.message("<b>" + text + "</b>",'user-intput',false);
+	this.display.message("<span class=\"command\">" + text + "</span>",'user-input',false);
 }
 
 /** Enable or disable local echoing. This, in addition to preventing player
@@ -1483,6 +1516,53 @@ SimpleInterface.prototype.handleInputPassword = function(e) {
 	
 	this.decaf.sendInput(this.input.value);
 	this.input.value = '';
+}
+
+/**
+ * This function saves the current content in the history variable,
+ * avoiding duplicates.
+ */
+SimpleInterface.prototype.saveInputInHistory = function() {
+  txt = this.input.value;
+  if (txt == "") return;
+  if (txt == this.history[0]) return;
+  // does the same text occur before in history?
+  var lastid = -1;
+  for (i = 0; i < this.history.length; i++) {
+    if (this.history[i] == txt) {
+      lastid = i;
+      break;
+    }
+  }
+  // from the last occurance, or the top if there was none, scroll up
+  if (lastid == -1) lastid = this.history.length-1;
+  for (i = lastid; i > 0; i--) this.history[i] = this.history[i-1];
+  this.history[0] = txt;
+}
+
+/**
+ * Returns whether the text in input corresponds with what we'd expect
+ * if the player was just browsing; if not, the player modified it,
+ * and we need to deal with the modifications.
+ */
+SimpleInterface.prototype.inputModified = function() {
+  txt = this.input.value;
+  if (this.historyposition == -1) return txt !== '';
+  return txt !== this.history[this.historyPosition];
+}
+
+/**
+ * Make the input field correspond with history[historyPosition]
+ */
+SimpleInterface.prototype.loadInput = function() {
+  if (this.historyPosition == -1) this.input.value = '';
+  else {
+    this.input.focus();
+      // by setting the focus at this point, the cursor position ends
+      // up at the end!
+    this.input.value = this.history[this.historyPosition];
+//    this.input.select();
+  }
 }
 
 /**

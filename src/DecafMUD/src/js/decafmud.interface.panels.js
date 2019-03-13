@@ -71,6 +71,7 @@ var SimpleInterface = function(decaf) {
 	this.el_display = document.createElement('div');
 	this.el_display.className = 'decafmud mud-pane primary-pane';
 	this.el_display.setAttribute('role', 'log');
+	this.el_display.setAttribute('aria-live', 'assertive');
 	this.el_display.setAttribute('tabIndex','0');
 	this.container.appendChild(this.el_display);
         
@@ -122,6 +123,8 @@ var SimpleInterface = function(decaf) {
 	this.input = document.createElement('input');
         this.input.id = "inputelement";
 	this.input.title = "MUD Input".tr(this.decaf);
+	this.input.setAttribute('role','textbox');
+	this.input.setAttribute('aria-label', this.input.title);
 	this.input.type = 'text';
 	this.input.className = 'decafmud input';
 	this._input.insertBefore(this.input, this._input.firstChild);
@@ -468,6 +471,7 @@ SimpleInterface.prototype.setup = function() {
 	this.decaf.display = this.display;
 
         // Make the menu
+    /*
         var menus = get_menus();
         for (i = 0; i < menus.length; i+=3) {
           this.tbNew(
@@ -502,6 +506,7 @@ SimpleInterface.prototype.setup = function() {
 		if ( ! this._resizeToolbar() ) {
 			this.resizeScreen(false); }
 	}
+*/
 }
 
 ///////////////////////////////////////////////////////////////////////////////
