@@ -3,6 +3,7 @@
  * http://decafmud.stendec.me
  *
  * Copyright 2010, Stendec <stendec365@gmail.com>
+ * Licensed under the MIT license.
  */
 
 /**
@@ -166,7 +167,7 @@ DecafMUD.last_id	= -1;
  * alert("You're using DecafMUD v" + DecafMUD.version.toString() + "!");
  * // You're using DecafMUD v0.9.0alpha!
  * @type Object */
-DecafMUD.version = {major: 0, minor: 9, micro: 0, flag: 'alpha',
+DecafMUD.version = {major: 0, minor: 9, micro: 1, flag: 'beta',
 	toString: function(){ return this.major+'.'+this.minor+'.'+this.micro+( this.flag ? '-' + this.flag : ''); } };
 
 // Default Values
@@ -966,6 +967,10 @@ if ( String.prototype.tr === undefined ) {
 DecafMUD.prototype.about = function() {
 	var abt = ["DecafMUD v{0} \u00A9 2010 Stendec"];
 	abt.push("http://decafmud.stendec.me/\n");
+
+	abt.push("Updated and improved by Pit from Discworld.");
+	abt.push("Further bugfixes and improvements by Waba from MUME.");
+	abt.push("https://github.com/waba4mume/DecafMUD\n");
 	
 	abt.push("DecafMUD is a web-based MUD client written in JavaScript, rather" +
 		" than a plugin like Flash or Java, making it load faster and react as" +
@@ -1315,14 +1320,11 @@ DecafMUD.prototype.initFinal = function() {
 		}
 	}
 	
-	// Add an About button to the toolbar.
-	if ( this.ui.tbNew ) {
-		this.ui.tbNew("About".tr(this), function(){ this.decaf.about(); }); }
-	
 	// We're loaded. Try to connect.
 	this.loaded = true;
 	this.ui.endSplash();
 	
+        /*
 	// If this is IE, show a warning.
 	if ( /MSIE/.test(navigator.userAgent) && this.ui.infoBar ) {
 		var msg = 'You may experience poor performance and UI glitches using ' +
@@ -1331,7 +1333,7 @@ DecafMUD.prototype.initFinal = function() {
 			'<a href="http://www.getfirefox.com">Mozilla Firefox</a> for ' +
 			'the best experience.';
 		this.ui.infoBar(msg.tr(this));
-	}
+	}*/
 	
 	if ( (!this.options.autoconnect) || (!this.socket.ready)) { return; }
 	this.connect();
@@ -1373,6 +1375,18 @@ DecafMUD.prototype.connectFail = function() {
 	// Set the timer.
 	var decaf = this;
 	this.conn_timer = setTimeout(function(){decaf.connectFail();},this.options.connect_timeout);
+}
+
+
+DecafMUD.prototype.reconnect = function() {
+  this.connect_try++;
+  //if ( this.connect_try < this.options.reconnect_tries ) {
+    var d = this;
+    if ( d.ui && d.ui.connecting ) {
+      d.ui.connecting();
+    }
+    d.socket.connect();
+  //}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1514,7 +1528,11 @@ var iac_reg = /\xFF/g;
  *  to the display and stuff. Escape any IAC bytes.
  * @param {String} input The input to send to the server. */
 DecafMUD.prototype.sendInput = function(input) {
-	if ( ! this.socket ) { throw "We don't have a socket yet. Just wait a bit!"; }
+	if ( !this.socket || !this.socket.connected ) {
+		this.debugString("Cannot send input: not connected");
+		return;
+	}
+
 	this.socket.write(this.encode(input + '\r\n').replace(iac_reg, '\xFF\xFF'));
 	
 	if ( this.ui ) {
@@ -1826,11 +1844,14 @@ DecafMUD.options = {
 		multiline	: true,
 		clearonsend	: false,
 		focusinput	: true,
+		repeat_input    : true,
 		blurclass	: 'mud-input-blur',
 		
 		msg_connect		: 'Press Enter to connect and type here...',
 		msg_connecting	: 'DecafMUD is attempting to connect...',
-		msg_empty		: 'Type commands here, or use the Up and Down arrows to browse your recently used commands.'
+		msg_empty		: 'Type commands here, or use the Up and Down arrows to browse your recently used commands.',
+
+		connect_hint	: true
 	},
 	
 	// Telnet Settings

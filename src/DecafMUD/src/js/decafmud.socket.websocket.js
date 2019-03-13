@@ -123,7 +123,9 @@ DecafWebSocket.prototype.connect = function() {
 	var con = 'ws' + (ssl ? 's' : '') + '://' + host + ':' + port + '/' + path;
 	this.decaf.debugString('WebSocket Connection String: ' + con);
 	
-	this.websocket = new WebSocket(con);
+	this.websocket = new WebSocket(con, ['binary', 'base64']);
+        this.websocket.binaryType = 'arraybuffer';
+
 	DecafWebSocket.sockets[this.websocket] = this;
 	
 	this.websocket.onopen		= DecafWebSocket.onOpen;
@@ -162,8 +164,7 @@ DecafWebSocket.prototype.assertConnected = function() {
  * @throws {String} If the data cannot be written for any reason. */
 DecafWebSocket.prototype.write = function(data) {
 	this.assertConnected();
-	if ( ! this.websocket.send(data) ) {
-		throw "Error sending data to the server."; }
+	this.websocket.send(new TextEncoder('utf-8').encode(data))
 }
 
 /** Called when the WebSocket's onOpen event fires. If the WebSocket's readyState
@@ -205,7 +206,7 @@ DecafWebSocket.onMessage = function(event) {
 	var sock = DecafWebSocket.sockets[this];
 	
 	// Pass the data on to DecafMUD.
-	sock.decaf.socketData(event.data);
+	sock.decaf.socketData(new TextDecoder('utf-8').decode(event.data));
 }
 
 // Add this to DecafMUD

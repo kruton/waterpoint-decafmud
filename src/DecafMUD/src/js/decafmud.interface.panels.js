@@ -3,6 +3,10 @@
  * http://decafmud.stendec.me
  *
  * Copyright 2010, Stendec <stendec365@gmail.com>
+ * Licensed under the MIT license.
+ *
+ * This is decafmud.interface.discworld.js from Discworld, but it is generic
+ * and can be included in the upstream.
  */
 
 /**
@@ -10,6 +14,9 @@
  * @author Stendec <stendec365@gmail.com>
  * @version 0.9.0
  */
+
+require("./decafmud.interface.panels.menu.js");
+require("./decafmud.interface.panels.settings.js");
 
 (function(DecafMUD) {
 
@@ -64,12 +71,26 @@ var SimpleInterface = function(decaf) {
 	this.el_display = document.createElement('div');
 	this.el_display.className = 'decafmud mud-pane primary-pane';
 	this.el_display.setAttribute('role', 'log');
-	this.el_display.setAttribute('aria-live', 'assertive');
 	this.el_display.setAttribute('tabIndex','0');
 	this.container.appendChild(this.el_display);
-	
-	// Handle keypresses in scrollback.
+        
+        // Make the sidebar
+        this.sidebar = document.createElement('div');
+        this.sidebar.className = 'decafmud mud-pane side-pane';
+        this.sidebar.setAttribute('tabIndex', '1');
+        this.container.appendChild(this.sidebar);
+        this.progresstable = document.createElement('table');
+        this.progresstable.style.display = 'none';
+        this.sidebar.appendChild(this.progresstable);
+        this.progressbars = new Array();
+        this.mapdiv = document.createElement('div');
+        this.mapdiv.style.display = 'none';
+        this.sidebar.appendChild(this.mapdiv);
+        
+	// Handle keypresses and clicks in scrollback.
+	this.el_display.onmouseup = this.maybeFocusInput.bind(this);
 	addEvent(this.el_display,'keydown',function(e){si.displayKey(e)});
+	addEvent(this.sidebar,'keydown',function(e){si.displayKey(e)});
 	
 	// Put the input in a container.
 	this._input = document.createElement('div');
@@ -99,26 +120,42 @@ var SimpleInterface = function(decaf) {
 	
 	// Make the input element.
 	this.input = document.createElement('input');
+        this.input.id = "inputelement";
 	this.input.title = "MUD Input".tr(this.decaf);
-	this.input.setAttribute('role','textbox');
-	this.input.setAttribute('aria-label', this.input.title);
 	this.input.type = 'text';
 	this.input.className = 'decafmud input';
 	this._input.insertBefore(this.input, this._input.firstChild);
 	this.container.appendChild(this._input);
-	
+
 	// Listen to input.
 	addEvent(this.input,'keydown', function(e){si.handleInput(e);});
 	
 	var helper = function(e) { si.handleBlur(e); };
 	addEvent(this.input, 'blur', helper);
 	addEvent(this.input, 'focus', helper);
-	
+
+        // remember a limited history; historyPosition is -1 unless
+        // the user is browsing through history (so the moment the
+        // input field changes, historyposition oes back to 0
+        this.history = [];
+        this.historyPosition = -1;
+        for (var i = 0; i < 100; i++) this.history[i] = '';
+
 	// Reset the interface state.
 	this.reset();
 	
 	// Listen to window resizing
-	addEvent(window,'resize',function() { si.resizeScreen(); });
+	addEvent(window, 'resize', this.resizeScreenFromEvent.bind(this, 'window resize'));
+
+	// Neuters IE's F1 help popup
+	if ("onhelp" in window)
+		window.onhelp = function() { return false; };
+
+	// Prevent leaving the page by accident (backspace)
+	window.onbeforeunload = this.unloadPageFromEvent.bind(this);
+
+        // Make sure the input is focussed
+        this.input.focus();
 	
 	return this;
 };
@@ -140,11 +177,11 @@ SimpleInterface.prototype.splash_pgt = null;
 SimpleInterface.prototype.splash_old = null;
 SimpleInterface.prototype.scrollButton = undefined;
 SimpleInterface.supports = {
-	'tabComplete'	: true,
-	'multipleOut'	: false,
-	'fullscreen'	: true,
-	'editor'		: false,
-	'splash'		: true
+	'tabComplete'   : true,
+	'multipleOut'   : false,
+	'fullscreen'    : true,
+	'editor'        : false,
+	'splash'        : true
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -320,6 +357,10 @@ SimpleInterface.prototype.hideSize = function(fnl) {
 // Status Notifications (and Stuff)
 ///////////////////////////////////////////////////////////////////////////////
 
+SimpleInterface.prototype.print_msg = function(txt) {
+  this.display.message("<span class=\"c6\">" + txt + "</span>");
+}
+
 /** Called by Decaf upon connection to let us know. */
 SimpleInterface.prototype.connected = function() {
 	this.updateIcon(this.ico_connected, "DecafMUD is currently connected.".tr(this.decaf),
@@ -328,14 +369,47 @@ SimpleInterface.prototype.connected = function() {
 
 /** Called by Decaf when it's trying to connect. */
 SimpleInterface.prototype.connecting = function() {
-	this.updateIcon(this.ico_connected, "DecafMUD is attempting to connect.".tr(this.decaf),
-		'', 'connectivity connecting');
+  this.print_msg(this.decaf.options.set_interface.msg_connecting);
+  if (this.decaf.options.set_interface.connect_hint)
+  {
+    if (this.decaf.options.socket == "websocket") {
+      this.display.message("<span>You are connecting using <i>websockets</i> " +
+        "on port " + this.decaf.options.set_socket.wsport + ".  If this does " +
+        "not work (for example because the port is blocked or you have an " +
+        "older version of websockets), you can connecting with flash.  To do " +
+        "so, open <a href=\"web_client.html?socket=flash\">the flash version</a> " +
+        "instead.</span>");
+    }
+    else {
+      this.display.message("<span>You are connecting using <i>flash</i> " +
+        "on port " + this.decaf.options.port + ".  To connect using " +
+        "websockets, make sure you have an up-to-date browser which " +
+        "supports this, and open " +
+        "<a href=\"web_client.html?socket=websocket\">the websocket version</a> " +
+        "instead.</span>");
+    }
+  }
+  this.updateIcon(this.ico_connected,
+                  "DecafMUD is attempting to connect.".tr(this.decaf),
+                  '', 'connectivity connecting');
 }
 
 /** Called by Decaf upon disconnection to let us know. */
 SimpleInterface.prototype.disconnected = function() {
-	this.updateIcon(this.ico_connected, "DecafMUD is currently disconnected.".tr(this.decaf),
-		'', 'connectivity disconnected');
+  this.print_msg("Connection closed.");
+  this.updateIcon(this.ico_connected,
+                  "DecafMUD is currently not connected.".tr(this.decaf),
+                  '', 'connectivity disconnected');
+}
+
+/** Event handler for onBeforeUnload. */
+SimpleInterface.prototype.unloadPageFromEvent = function(e) {
+	if (this.decaf.connected) {
+		return "You are still connected.";
+	}
+	else {
+		return;
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -353,10 +427,6 @@ SimpleInterface.prototype.reset = function() {
 	// Reset the input handling state
 	this.masked		= false;
 	this.inputCtrl	= false;
-	this.mruIndex	= 0;
-	this.mruHistory	= [];
-	this.mruSize	= this.decaf.options.set_interface.mru_size;
-	this.mruTemp	= false;
 	this.hasFocus	= false;
 	
 	// Tab Completion Data
@@ -394,46 +464,32 @@ SimpleInterface.prototype.setup = function() {
 	// Create the display.
 	this.decaf.debugString('Initializing display plugin "'+display+'" in: #' + this.el_display.id,'info');
 	this.display = new DecafMUD.plugins.Display[display](this.decaf, this, this.el_display);
+        this.display.id = 'mud-display';
 	this.decaf.display = this.display;
+
+        // Make the menu
+        var menus = get_menus();
+        for (i = 0; i < menus.length; i+=3) {
+          this.tbNew(
+            menus[i],
+            menus[i+1].tr(this.decaf),
+            undefined,
+            menus[i+2].tr(this.decaf),
+            1,
+            true,
+            false,
+            undefined,
+            function(i) {return function(e) {toggle_menu(i/3);}} (i)
+          );
+        }
+
 	
 	// Should we go fullscreen automatically?
-	this.goFullOnResize = this.store.get('fullscreen-auto', true);
+        // NB: disabled, gets confused by browser-based fullscreen (F11)
+	this.goFullOnResize = false; //this.store.get('fullscreen-auto', true);
 	
 	// Should we be starting in fullscreen?
 	var fs = this.store.get('fullscreen-start', this.decaf.options.set_interface.start_full);
-	
-	// Create the fullscreen button.
-	this.fsbutton = this.tbNew(
-		"Fullscreen".tr(this.decaf),
-		undefined,
-		"Click to enter fullscreen mode.".tr(this.decaf),
-		1,
-		true,
-		fs,
-		undefined,
-		function(e){ this.click_fsbutton(e); }
-	);
-	
-	// Create the log button.
-	this.logbutton = this.tbNew(
-		"Logs".tr(this.decaf),
-		undefined,
-		"Click to open a window containing this session's logs.".tr(this.decaf),
-		0,
-		true,
-		false,
-		undefined,
-		function(e){ this.showLogs(); }
-	);
-	
-	// Create a settings button.
-	//this.stbutton = this.tbNew(
-	//	"Settings".tr(this.decaf),
-	//	undefined,
-	//	"Click to change DecafMUD's settings.".tr(this.decaf),
-	//	1, true, false, undefined,
-	//	function(e){ this.showSettings(); }
-	//);
 	
 	// Create the connected notification icon.
 	this.ico_connected = this.addIcon("You are currently disconnected.".tr(this.decaf), '', 'connectivity disconnected');
@@ -448,62 +504,17 @@ SimpleInterface.prototype.setup = function() {
 	}
 }
 
-/** Quick and dirty function for saving logs. */
-SimpleInterface.prototype.showLogs = function() {
-	//var wd = win.document;
-	
-	// Build some CSS.
-	var css = '', css2 = '';
-	if ( window.getComputedStyle ) {
-		var node = this.display.display, count=0;
-		while(node) {
-			count += 1;
-			if(count>15){alert('Too high count!');return;}
-			var style = getComputedStyle(node,null);
-			if (!style.backgroundColor ||
-				style.backgroundColor === 'transparent' ||
-				style.backgroundColor.substr(0,5) === 'rgba(') {
-				if(node === document.body) { break; }
-				node = node.parentNode;
-			} else {
-				css = 'background-color:' + style.backgroundColor + ';';
-				break;
-			}
-		}
-		if(!css) { css = 'background-color:#000;'; }
-		var style = getComputedStyle(this.display.display,null);
-		css = 'body{'+css+'color:'+style.color+';}';
-		
-		css2 = 'div{font-family:'+style.fontFamily+';font-size:'+style.fontSize+';}';
-	} else {
-		css = 'body{background:#000;color:#C0C0C0;}';
-		css2= 'div{font-family:monospace;}';
-	}
-	
-	var url = 'data:text/html,';
-	
-	url += '<html><head><title>';
-	url += 'DecafMUD Session Log'.tr(this.decaf);
-	url += '</title><style>'+css+css2+'</style></head><body>';
-	url += '<h1>';
-	url += 'DecafMUD Session Log'.tr(this.decaf);
-	url += '</h2>';
-	url += '<div>' + this.display.display.innerHTML + '</div>';
-	url += '</body></html>';
-	
-	var win = window.open(url,'log-window','width=700,height=400,directories=no,location=no,menubar=no,status=no,toolbar=no,scrollbars=yes');
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // Settings
 ///////////////////////////////////////////////////////////////////////////////
 
 /** Storage for the settings div. */
-SimpleInterface.prototype.settings = undefined;
+//SimpleInterface.prototype.settings = undefined;
 
 /** Load the settings interface. */
+/*
 SimpleInterface.prototype.showSettings = function() {
-	/** Is there already a settings element? */
+	// Is there already a settings element?
 	if ( this.settings ) {
 		this.settings.parentNode.removeChild(this.settings);
 		this.settings = undefined;
@@ -556,95 +567,8 @@ SimpleInterface.prototype.showSettings = function() {
 		
 		// Create a header.
 		var l = document.createElement('legend');
-		l.innerHTML = n.tr(this.decaf);
+		l.innerHTML = n;
 		s.appendChild(l);
-		
-		// Is there a description?
-		if ( setting['_desc'] !== undefined ) {
-			var d = document.createElement('p');
-			d.innerHTML = setting['_desc'].tr(this.decaf);
-			s.appendChild(d);
-		}
-		
-		// Get the path.
-		var path = setting['_path'] || '/';
-		if ( path.substr(-1) !== '/' ) { path += '/'; }
-		
-		// Go through the controls.
-		for(var _k in setting) {
-			if ( _k.substr(0,1) === '_' ) { continue; }
-			var d = document.createElement('div'),
-				sett = setting[_k];
-			
-			// Calculate the name.
-			var n = _k.substr(0,1).toUpperCase() + _k.substr(1);
-			if ( sett['_name'] !== undefined ) { n = sett['_name']; }
-			
-			// Calculate the ID.
-			var id = path + _k;
-			
-			// Get the type of input element necessary.
-			var t = sett['_type'] || 'text';
-			
-			// Create the label if not boolean.
-			if ( t !== 'boolean' ) {
-				var l = document.createElement('label');
-				l.setAttribute('for', id);
-				l.innerHTML = n.tr(this.decaf);
-				d.appendChild(l);
-			}
-			
-			// Create the input control
-			if ( t === 'password' ) {
-				var i = document.createElement('input');
-				i.setAttribute('id',id);
-				i.setAttribute('type','password');
-				d.appendChild(i);
-			} else if ( t === 'boolean' ) {
-				var i = document.createElement('input');
-				i.setAttribute('id',id);
-				i.setAttribute('type','checkbox');
-				d.appendChild(i);
-			} else if ( t === 'nochance' ) {
-				var i = document.createElement('select');
-				i.setAttribute('id',id);
-				var c = document.createElement('option');
-				c.setAttribute('value','true');
-				c.innerHTML = 'Yes';
-				i.appendChild(c);
-				c = document.createElement('option');
-				c.setAttribute('value','false');
-				c.innerHTML = 'No';
-				i.appendChild(c);
-				d.appendChild(i);
-			} else {
-				var i = document.createElement('input');
-				i.setAttribute('id',id);
-				d.appendChild(i);
-			} 
-			
-			// Is there a desc?
-			if ( sett['_desc'] !== undefined ) {
-				var i;
-				if ( t === 'boolean' ) {
-					i = document.createElement('label');
-					i.setAttribute('for',id);
-				} else {
-					i = document.createElement('p');
-				}
-				i.innerHTML = sett['_desc'].tr(this.decaf);
-				d.appendChild(i);
-			} else if ( t === 'boolean' ) {
-				var i = document.createElement('label');
-				i.setAttribute('for',id);
-				i.innerHTML = n.tr(this.decaf);
-				d.appendChild(i);
-			}
-			
-			// Add this.
-			s.appendChild(d);
-		}
-		
 		
 		// Append the fieldset to the document.
 		cont.appendChild(s);
@@ -665,6 +589,7 @@ SimpleInterface.prototype.showSettings = function() {
 	this.tbPressed(this.stbutton,true);
 	this.tbTooltip(this.stbutton,"Click to close the settings window.".tr(this.decaf));
 }
+*/
 
 ///////////////////////////////////////////////////////////////////////////////
 // Toolbar Functions
@@ -676,7 +601,7 @@ SimpleInterface.prototype.tbDelete = function(id) {
 	if ( this.toolbuttons[id] === undefined ) { return; }
 	var btn = this.toolbuttons[id];
 	btn[0].parentNode.removeChild(btn[0]);
-	delete this.toolbuttons[id];
+	this.toolbuttons[id] = undefined;
 	
 	// Resize the toolbar.
 	this._resizeToolbar();
@@ -764,7 +689,7 @@ SimpleInterface.prototype.tbIcon = function(id, icon) {
  * @param {String} [clss] Any additional class to set on the button.
  * @param {function} [onclick] The function to call when the button is clicked
  *    or toggled. */
-SimpleInterface.prototype.tbNew = function(text,icon,tooltip,type,enabled,pressed,clss,onclick) {
+SimpleInterface.prototype.tbNew = function(btnid,text,icon,tooltip,type,enabled,pressed,clss,onclick) {
 	if ( typeof icon === 'function' ) {
 		var onc = onclick;
 		onclick = icon;
@@ -778,8 +703,8 @@ SimpleInterface.prototype.tbNew = function(text,icon,tooltip,type,enabled,presse
 	// Get this button's ID.
 	var ind = ( ++this.toolbutton_id );
 	
-	var btn = document.createElement('a');
-	btn.id = this.container.id + '-toolbar-button-' + ind;
+	var btn = document.createElement('span');//document.createElement('a');
+        btn.id = btnid;
 	btn.className = 'decafmud button toolbar-button';
 	if ( clss ) { btn.className += ' ' + clss; }
 	if ( type === 1 ) { btn.className += ' toggle ' + (pressed ? 'toggle-pressed' : 'toggle-depressed'); }
@@ -846,6 +771,24 @@ SimpleInterface.prototype.tbNew = function(text,icon,tooltip,type,enabled,presse
 /** Resize the toolbar when adding/changing/removing a button. */
 SimpleInterface.prototype.toolbarPadding = undefined;
 SimpleInterface.prototype._resizeToolbar = function() {
+  var always = true,
+      css = this.toolbar.style.cssText,
+      ret = false;
+
+  // make sure the display leaves enough space for the toolbar
+  if ( this.display && this.toolbarPadding !== this.toolbar.clientHeight ) {
+    this.display.shouldScroll();
+    this.el_display.style.paddingTop = this.toolbar.clientHeight + 'px';
+    this.toolbarPadding = this.toolbar.clientHeight;
+    this.resizeScreen(false,true);
+    this.display.doScroll();
+    ret = true;
+  } else {
+    this.toolbarPadding = this.toolbar.clientHeight;
+  }
+
+  return ret;
+/*
 	var tbar = this.store.get('toolbar-position','top-left'),
 		always = this.store.get('toolbar-always',2),
 		css = this.toolbar.style.cssText,
@@ -923,6 +866,7 @@ SimpleInterface.prototype._resizeToolbar = function() {
 	this.toolbar.style.cssText = css;
 	
 	return ret;
+*/
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1215,7 +1159,6 @@ SimpleInterface.prototype.delIcon = function(ind) {
 	
 	// Remove the icon from DOM and delete.
 	this._input.removeChild(el);
-        delete this.icons[id][0];
 	
 	// Recalculate icon positions.
 	for(var i=0; i < this.icons.length; i++) {
@@ -1299,10 +1242,6 @@ SimpleInterface.prototype.enter_fs = function(showSize) {
 	// Set the className so it appears all big.
 	this.container.className += ' fullscreen';
 	
-	// Adjust the fs button.
-	this.tbPressed(this.fsbutton, true);
-	this.tbTooltip(this.fsbutton, "Click to exit fullscreen mode.".tr(this.decaf));
-	
 	// Hide all the other body elements.
 	for(var i=0;i<document.body.children.length;i++) {
 		var child = document.body.children[i];
@@ -1323,6 +1262,7 @@ SimpleInterface.prototype.enter_fs = function(showSize) {
 	
 	// Resize and show the size.
 	this._resizeToolbar();
+	this.resizeScreen(showSize, false);
 	if ( showSize !== false ) { this.showSize(); }
 	
 	// Refocus input?
@@ -1359,10 +1299,6 @@ SimpleInterface.prototype.exit_fs = function() {
 	}
 	this.container.className = classes.join(' ');
 	
-	// Adjust the fs button.
-	this.tbPressed(this.fsbutton, false);
-	this.tbTooltip(this.fsbutton, "Click to enter fullscreen mode.".tr(this.decaf));
-	
 	// Add the container back to the parent element.
 	if ( this.next_sib !== undefined && this.next_sib !== null ) {
 		this.old_parent.insertBefore(this.container, this.next_sib);
@@ -1392,7 +1328,6 @@ SimpleInterface.prototype.old_width = -1;
 SimpleInterface.prototype.old_fs = false;
 
 /** Resize the screen elements to fit together nicely. */
-SimpleInterface.prototype.goFullOnResize = true;
 SimpleInterface.prototype.resizeScreen = function(showSize,force) {
 	// Are we fullscreen now when we weren't before?
 	if ( this.goFullOnResize ) {
@@ -1415,6 +1350,7 @@ SimpleInterface.prototype.resizeScreen = function(showSize,force) {
 	
 	// Now, handle actually resizing things.
 	if ( force !== true && this.old_height === this.container.offsetHeight && this.old_width === this.container.offsetWidth ) { return; }
+        this.hidePopup();  // don't bother resizing any open popups
 	this.old_height = this.container.offsetHeight;
 	this.old_width = this.container.offsetWidth;
 	
@@ -1423,12 +1359,12 @@ SimpleInterface.prototype.resizeScreen = function(showSize,force) {
 	if ( this.toolbarPadding ) { tot = tot - (this.toolbarPadding-12); }
 	if ( tot < 0 ) { tot = 0; }
 	
-	if ( this.settings ) { this.set_mid.style.height = tot + 'px'; }
+	if ( this.popup ) { this.set_mid.style.height = tot + 'px'; }
 	if ( this.toolbarPadding ) {
 		tot -= 12;
 		if ( tot < 0 ) { tot = 0; }
 	}
-	
+
 	this.el_display.style.height = tot + 'px'; //cssText = 'height:'+tot+'px';
 	if ( force !== true && this.display ) { this.display.scroll(); }
 	
@@ -1441,6 +1377,251 @@ SimpleInterface.prototype.resizeScreen = function(showSize,force) {
 		this.showSize(); }
 };
 
+SimpleInterface.prototype.resizeScreenFromEvent = function(source, event) {
+  this.resizeScreen(true, false);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// A sidebar for showing progress bars and the map                           //
+///////////////////////////////////////////////////////////////////////////////
+
+SimpleInterface.prototype.showSidebar = function() {
+  this.sidebar.style.display = 'inline';
+}
+
+SimpleInterface.prototype.hideSidebar = function() {
+  this.sidebar.style.display = 'none';
+}
+
+SimpleInterface.prototype.showProgressBars = function() {
+  this.progresstable.style.display = 'inline';
+  this.progresstable.style.height = "auto";
+}
+
+SimpleInterface.prototype.hideProgressBars = function() {
+  this.progresstable.style.display = 'none';
+  this.progresstable.style.height = "0";
+}
+
+SimpleInterface.prototype.showMap = function() {
+  this.mapdiv.style.display = 'inline';
+}
+
+SimpleInterface.prototype.hideMap = function() {
+  this.mapdiv.style.display = 'none';
+}
+
+SimpleInterface.prototype.addProgressBar = function(name, col) {
+  var w = 100;
+  var h = 20;
+
+  // create the table-entry
+  var tr = document.createElement("tr");
+  this.progresstable.appendChild(tr);
+  var td = document.createElement("td");
+  tr.appendChild(td);
+  td.innerHTML = name + ":";
+  td = document.createElement("td");
+  tr.appendChild(td);
+
+  // create the bar
+  var bar = document.createElement("div");
+  bar.style.width = w + 'px';
+  bar.style.height = h + 'px';
+  bar.style.backgroundColor = 'white';
+  bar.style.padding = '0px';
+  var progress = document.createElement("div");
+  progress.style.width = "0px";
+  progress.style.height = h + 'px';
+  progress.style.backgroundColor = col;
+  progress.style.color = "black";
+  progress.style.padding = "0px";
+  progress.style.overflow = "hidden";
+  progress.style.overflowX = "visible";
+  var info = document.createElement("div");
+  info.style.width = bar.style.width;
+  info.style.height = bar.style.height;
+  info.style.marginTop = (-h) + "px";
+  info.style.textAlign = "center";
+  info.style.paddingTop = "3px";
+  info.style.fontWeight = "bold";
+  info.style.color = "black";
+  td.appendChild(bar);
+  bar.appendChild(progress);
+  td.appendChild(info);
+
+  // and remember it!
+  var i = this.progressbars.length;
+  this.progressbars[i] = [name,progress,info];
+}
+
+SimpleInterface.prototype.setProgress = function(name, percent,txt) {
+  var w = 100;
+
+  for (i = 0; i < this.progressbars.length; i++) {
+    if (this.progressbars[i][0] == name) {
+      this.progressbars[i][1].style.width =
+        (percent*w/100) + "px";
+      this.progressbars[i][2].innerHTML = txt;
+    }
+  }
+}
+
+SimpleInterface.prototype.setProgressColor = function(name, col) {
+  for (i = 0; i < this.progressbars.length; i++) {
+    if (this.progressbars[i][0] == name) {
+      this.progressbars[i][1].style.backgroundColor = col;
+    }
+  }
+}
+
+SimpleInterface.prototype.printMap = function(txt) {
+  this.mapdiv.innerHTML = "<hr><i>Map:</i><center>" + txt + "</center>";
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// A popup window for various kinds of menu-induced user interactions.       //
+///////////////////////////////////////////////////////////////////////////////
+
+SimpleInterface.prototype.popup = undefined;
+SimpleInterface.prototype.headerdrag = undefined;
+SimpleInterface.prototype.popupheader = undefined;
+
+/** Give suitable sizes and offsets for popups. */
+SimpleInterface.prototype.maxPopupHeight = function() {
+  var tot = this.container.offsetHeight - (this._input.offsetHeight + 50);
+  if ( this.toolbarPadding ) { tot = tot - (this.toolbarPadding-12); }
+  if ( tot < 0 ) { tot = 0; }
+  return tot;
+}
+
+SimpleInterface.prototype.maxPopupWidth = function() {
+  var tot = this.container.offsetWidth - 12; // for the scrollbar
+  if ( tot < 0 ) { tot = 0; }
+  return tot;
+}
+
+SimpleInterface.prototype.verticalPopupOffset = function() {
+  return 50;
+}
+
+SimpleInterface.prototype.horizontalPopupOffset = function() {
+  return 0;
+}
+
+/** Hide the popup if one is open */
+SimpleInterface.prototype.hidePopup = function() {
+  if (!this.popup) return;
+  this.headerdrag.StopListening(true);
+  this.popup.parentNode.removeChild(this.popup);
+  this.popup = undefined;
+  this.popupheader = undefined;
+  this.input.focus();
+}
+
+/** Load the settings interface. */
+SimpleInterface.prototype.showPopup = function() {
+  // if we already have a popup, remove it first, so we can start over
+  if (this.popup) this.hidePopup();
+
+  // make the popup div
+  this.popup = document.createElement("div");
+
+  // get data about the screen size
+  var w = this.maxPopupWidth();
+  var h = this.maxPopupHeight();
+  var t = this.verticalPopupOffset();
+  var l = this.horizontalPopupOffset();
+
+  l += w * 2 / 10;
+  w = w * 6 / 10;
+  h = h * 7 / 10;
+
+  this.popup.style.width = w + "px";
+  this.popup.style.height = h + "px";
+  this.popup.style.top = t + "px";
+  this.popup.style.left = l + "px";
+  this.popup.className = 'decafmud window';
+  this.popup.id = "popup";
+  this.container.insertBefore(this.popup, this.el_display);
+
+  // create the draggable header
+  this.popupheader = document.createElement("div");
+  this.popupheader.style.width = w + "px";
+  this.popupheader.style.height = "25px";
+  this.popupheader.style.top = "0px";
+  this.popupheader.className = 'decafmud window-header';
+  this.popupheader.id = "popupheader";
+  this.popup.appendChild(this.popupheader);
+  this.headerdrag = new dragObject("popup", "popupheader");
+
+  // create a close button
+  var x = document.createElement('button');
+  x.innerHTML = '<big>X</big>';
+  x.className = 'closebutton';
+  var si = this;
+  addEvent(x, 'click', function(e) { si.hidePopup(); });
+  this.popup.appendChild(x);
+
+  // Make sure menus are closed when the mouse clicks on us
+  addEvent(this.popup, 'mousedown', function(e) {
+     if ( e.which == 1 && open_menu !== -1 ) { close_menus(); }
+  });
+
+  return this.popup;
+}
+
+SimpleInterface.prototype.popupHeader = function(text) {
+  var p = document.createElement("p");
+  p.innerHTML = text;
+  p.className = "headertext";
+  this.popup.appendChild(p);
+}
+
+SimpleInterface.prototype.buttonLine = function(par) {
+  var buttonline = document.createElement("p");
+  buttonline.style.textAlign = "center";
+  par.appendChild(buttonline);
+  return buttonline;
+}
+
+SimpleInterface.prototype.createButton = function(caption, func) {
+  var btn = document.createElement("button");
+  btn.className = "prettybutton";
+  btn.innerHTML = "<big>" + caption + "</big>";
+  if (typeof func == 'string' || func instanceof String)
+    btn.onclick = function() { eval(func); }
+  else btn.onclick = func;
+  return btn;
+}
+
+SimpleInterface.prototype.popupTextarea = function(name, adjust) {
+  var w = this.maxPopupWidth() * 6 / 10 - 15;
+  var h = this.maxPopupHeight() * 7 / 10 - 100 - adjust;
+  var textarea = document.createElement("textarea");
+  textarea.id = name;
+  textarea.cols = 80;
+  textarea.rows = 20;
+  textarea.style.width = w + "px";
+  textarea.style.height = h + "px";
+  textarea.style.margin = "5px";
+  this.popup.appendChild(textarea);
+  textarea.focus();
+  return textarea;
+}
+
+SimpleInterface.prototype.popupTextdiv = function() {
+  var w = this.maxPopupWidth() * 6 / 10 - 10; 
+  var h = this.maxPopupHeight() * 7 / 10 - 60; 
+  var div = document.createElement("div");
+  div.style.width = w + "px";
+  div.style.height = h + "px";
+  div.style.margin = "5px";
+  div.style.overflowY = "auto";
+  this.popup.appendChild(div);
+  return div;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // The Input Element
 ///////////////////////////////////////////////////////////////////////////////
@@ -1449,7 +1630,7 @@ SimpleInterface.prototype.resizeScreen = function(showSize,force) {
  * @param {String} text The input to display. */
 SimpleInterface.prototype.displayInput = function(text) {
 	if ( (!this.display) || (!this.echo) ) { return; }
-	this.display.message("<b>" + text + "</b>",'user-intput',false);
+	this.display.message("<span class=\"command\">" + text + "</span>",'user-input',false);
 }
 
 /** Enable or disable local echoing. This, in addition to preventing player
@@ -1461,6 +1642,27 @@ SimpleInterface.prototype.localEcho = function(echo) {
 	this.echo = echo;
 	
 	this.updateInput();
+}
+
+/** Called onmouseup in UI elements (atm, this.el_display). Clicking vaguely
+ * around the UI (to focus the browser window) should bring the focus to the
+ * input line, yet avoid to mess with on-purpose clicks (scrollback scrolling,
+ * scrollback selection).
+ */
+SimpleInterface.prototype.maybeFocusInput = function (e) {
+	var sel = getSelection();
+	if (sel && sel.toString() !== ''
+		/* IE10 workaround: sel.focusNode is typically a TextNode (not
+		 * an Element), but Node.contains() only works on IE10 if the
+		 * argument is an Element. parentNode gives us the parent
+		 * <span> Element, which is still a child of el_display. */
+		&& this.el_display.contains(sel.focusNode.parentNode))
+	{
+		this.decaf.debugString('not focusing this.input: selection active');
+		return;
+	}
+
+	this.input.focus();
 }
 
 /** Handle keypresses from the display element. */
@@ -1483,6 +1685,53 @@ SimpleInterface.prototype.handleInputPassword = function(e) {
 	
 	this.decaf.sendInput(this.input.value);
 	this.input.value = '';
+}
+
+/**
+ * This function saves the current content in the history variable,
+ * avoiding duplicates.
+ */
+SimpleInterface.prototype.saveInputInHistory = function() {
+  txt = this.input.value;
+  if (txt == "") return;
+  if (txt == this.history[0]) return;
+  // does the same text occur before in history?
+  var lastid = -1;
+  for (i = 0; i < this.history.length; i++) {
+    if (this.history[i] == txt) {
+      lastid = i;
+      break;
+    }
+  }
+  // from the last occurance, or the top if there was none, scroll up
+  if (lastid == -1) lastid = this.history.length-1;
+  for (i = lastid; i > 0; i--) this.history[i] = this.history[i-1];
+  this.history[0] = txt;
+}
+
+/**
+ * Returns whether the text in input corresponds with what we'd expect
+ * if the player was just browsing; if not, the player modified it,
+ * and we need to deal with the modifications.
+ */
+SimpleInterface.prototype.inputModified = function() {
+  txt = this.input.value;
+  if (this.historyposition == -1) return txt !== '';
+  return txt !== this.history[this.historyPosition];
+}
+
+/**
+ * Make the input field correspond with history[historyPosition]
+ */
+SimpleInterface.prototype.loadInput = function() {
+  if (this.historyPosition == -1) this.input.value = '';
+  else {
+    this.input.focus();
+      // by setting the focus at this point, the cursor position ends
+      // up at the end!
+    this.input.value = this.history[this.historyPosition];
+//    this.input.select();
+  }
 }
 
 /**
@@ -1651,7 +1900,7 @@ SimpleInterface.prototype.updateInput = function(force) {
 		
 		// Remove input.
 		par.removeChild(inp);
-                delete this.input;
+		delete this.input;
 		
 		// Attach the new input.
 		if ( id ) { new_inp.id = id; }
@@ -1692,7 +1941,7 @@ SimpleInterface.prototype.updateInput = function(force) {
 		
 		// Remove input.
 		par.removeChild(inp);
-                delete this.input;
+		delete this.input;
 		
 		// Attach the new input.
 		if ( id ) { new_inp.id = id; }
@@ -1718,5 +1967,5 @@ SimpleInterface.prototype.updateInput = function(force) {
 };
 
 // Expose this to DecafMUD
-DecafMUD.plugins.Interface.simple = SimpleInterface;
+DecafMUD.plugins.Interface.panels = SimpleInterface;
 })(DecafMUD);
