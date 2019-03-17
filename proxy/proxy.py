@@ -50,7 +50,8 @@ async def tcp_proxy(websocket, path):
         print('Connection closed from {}'.format(address))
 
 async def tcp_proxy_server(stop):
-    async with websockets.serve(tcp_proxy, listen_address, listen_port):
+    async with websockets.serve(tcp_proxy, listen_address, listen_port,
+                                subprotocols=['binary']):
         print('Server started on {} port {}'.format(listen_address, listen_port))
         await stop
 
