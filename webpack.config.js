@@ -1,17 +1,16 @@
 const HtmlWebPackPlugin = require("html-webpack-plugin");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
-const UglifyJsPlugin = require("uglifyjs-webpack-plugin");
+const TerserPlugin = require("terser-webpack-plugin");
 const OptimizeCSSAssetsPlugin = require("optimize-css-assets-webpack-plugin");
 const webpack = require("webpack");
 
 module.exports = {
+  output: {
+      publicPath: ''
+  },
   optimization: {
     minimizer: [
-      new UglifyJsPlugin({
-        cache: true,
-        parallel: true,
-        sourceMap: true
-      }),
+      new TerserPlugin(),
       new OptimizeCSSAssetsPlugin({
         cssProcessor: require('cssnano'),
         cssProcessorPluginOptions: {

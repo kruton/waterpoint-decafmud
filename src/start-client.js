@@ -9,25 +9,27 @@ import "./DecafMUD/src/css/mud-colors.css"
 import "./DecafMUD/src/css/decafmud.css"
 import "./DecafMUD/src/css/decafmud-dark.css"
 
-new DecafMUD({
-    host: "waterpoint-wss.the-b.org",
-    autoreconnect: false,
-    autoconnect: true,
+export default function() {
+    new DecafMUD({
+        host: "waterpoint-wss.the-b.org",
+        autoreconnect: false,
+        autoconnect: true,
 
-    set_socket: {
-        wsport: 443,
-        wspath: "/client/websocket",
-        ssl: true
-    },
+        set_socket: {
+            wsport: 443,
+            wspath: "/client/websocket",
+            ssl: true
+        },
 
-    set_interface: {
-        container: "#wpt-client",
-        connect_hint: false,
-        repeat_input: false,
-        start_full: false
-    },
+        set_interface: {
+            container: "#wpt-client",
+            connect_hint: false,
+            repeat_input: false,
+            start_full: false
+        },
 
-    language: "en",
-    encoding: "utf8",
-    socket: "websocket"
-});
+        language: "en",
+        encoding: "utf8",
+        socket: "websocket"
+    });
+}
