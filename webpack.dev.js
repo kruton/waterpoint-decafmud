@@ -9,7 +9,7 @@ module.exports = merge(common, {
     "./src/index.js"
   ],
   plugins: [
-    new Serve(options)
+    new Serve({})
   ],
   watch: true
 });
