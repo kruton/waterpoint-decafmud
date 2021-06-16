@@ -10,7 +10,18 @@ module.exports = {
   },
   optimization: {
     minimizer: [
-      new TerserPlugin(),
+      new TerserPlugin({
+        terserOptions: {
+          toplevel: true,
+          compress: {
+            passes: 2,
+          },
+          format: {
+            comments: false,
+          }
+        },
+        extractComments: false,
+      }),
       new CssMinimizerPlugin()
     ]
   },
