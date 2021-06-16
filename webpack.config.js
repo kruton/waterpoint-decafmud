@@ -1,7 +1,7 @@
 const HtmlWebPackPlugin = require("html-webpack-plugin");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const TerserPlugin = require("terser-webpack-plugin");
-const OptimizeCSSAssetsPlugin = require("optimize-css-assets-webpack-plugin");
+const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 const webpack = require("webpack");
 
 module.exports = {
@@ -11,13 +11,7 @@ module.exports = {
   optimization: {
     minimizer: [
       new TerserPlugin(),
-      new OptimizeCSSAssetsPlugin({
-        cssProcessor: require('cssnano'),
-        cssProcessorPluginOptions: {
-          preset: ['default', { discardComments: { removeAll: true } }],
-        },
-        canPrint: false
-      })
+      new CssMinimizerPlugin()
     ]
   },
   module: {
