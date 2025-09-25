@@ -17,7 +17,7 @@ export default function() {
 
         set_socket: {
             wsport: 8302,
-            wspath: "/client/websocket",
+            wspath: "client/websocket",
             ssl: true
         },
 
